@@ -45,3 +45,7 @@ next-env.d.ts
 
 # serena tool state
 /.serena
+
+# OpenNext / wrangler build output and local state
+/.open-next
+/.wrangler
