@@ -1,26 +1,554 @@
 @import "tailwindcss";
 
+@theme {
+  /* Wide-screen breakpoints beyond Tailwind's default 2xl (96rem) */
+  --breakpoint-3xl: 112rem;
+  --breakpoint-4xl: 128rem;
+  --breakpoint-5xl: 160rem;
+  --breakpoint-6xl: 200rem;
+
+  /* Palette lifted from public/elite.svg */
+  --color-cream: #fff8f1;
+  --color-ink: #0e0d0b;
+  --color-navy: #000e24;
+  --color-navy-deep: #001536;
+  --color-blaze: #207aff;
+  --color-blaze-deep: #0067ff;
+  --color-steel: #dbdbdb;
+
+  --font-display: var(--font-bricolage);
+  --font-sans: var(--font-archivo);
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Page canvas color lives on <html> so ColorScrollPage can transition it
+     while negative z-index sliding titles still paint above it */
+  background: #f6f8ff;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Flips to cream inside dark scroll zones (see ColorScrollPage) */
+  --zone-ink: var(--color-ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--color-ink);
+  font-family: var(--font-sans), sans-serif;
+}
+
+::selection {
+  background: var(--color-blaze);
+  color: #fff;
+}
+
+@layer components {
+  /* Page shell: matches the 1512px design canvas, widens on 3xl+ screens */
+  .shell {
+    width: 100%;
+    margin-inline: auto;
+    max-width: 94.5rem;
+    padding-inline: clamp(1.25rem, 3.9vw, 3.7rem);
+  }
+  @media (min-width: 112rem) {
+    .shell {
+      max-width: 108rem;
+    }
+  }
+  @media (min-width: 160rem) {
+    .shell {
+      max-width: 130rem;
+    }
+  }
+
+  .btn-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6em;
+    border-radius: 9999px;
+    background: #0000FF;
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition:
+      transform 0.45s var(--ease-out-quart),
+      background-color 0.3s ease,
+      box-shadow 0.45s var(--ease-out-quart);
+  }
+  .btn-pill:hover {
+    background: #4141ff;
+  }
+  .btn-pill:active {
+    transform: translateY(0);
+  }
+
+  /* Full-bleed horizontal rail whose first item aligns with the .shell edge.
+     scroll-padding must match padding, or mandatory snapping scrolls past it. */
+  .rail-pad {
+    --rail-pad: max(
+      clamp(1.25rem, 3.9vw, 3.7rem),
+      calc(50vw - 47.25rem + 3.7rem)
+    );
+    padding-inline: var(--rail-pad);
+    scroll-padding-inline: var(--rail-pad);
+  }
+  @media (min-width: 112rem) {
+    .rail-pad {
+      --rail-pad: max(3.7rem, calc(50vw - 54rem + 3.7rem));
+    }
+  }
+  @media (min-width: 160rem) {
+    .rail-pad {
+      --rail-pad: max(3.7rem, calc(50vw - 65rem + 3.7rem));
+    }
+  }
+
+  .nav-link {
+    position: relative;
+    transition: color 0.25s ease;
+  }
+  .nav-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -0.35em;
+    height: 2px;
+    width: 100%;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: right;
+    transition: transform 0.4s var(--ease-out-quart);
+  }
+  .nav-link:hover::after {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+/* ---- Entrance animations ---------------------------------------- */
+
+/* On-load rise for hero text; stagger with inline animation-delay */
+.rise {
+  opacity: 0;
+  transform: translateY(1.75rem);
+  animation: rise 0.9s var(--ease-out-quart) forwards;
+}
+@keyframes rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Scroll-triggered reveal (Reveal component adds .is-in via IntersectionObserver) */
+.reveal {
+  opacity: 0;
+  transform: translateY(2.75rem);
+  transition:
+    opacity 0.85s var(--ease-out-quart),
+    transform 0.85s var(--ease-out-quart);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Blur-in variant: text sharpens into place on first scroll into view */
+.blur-reveal {
+  opacity: 0;
+  filter: blur(16px);
+  transform: translateY(1.5rem);
+  transition:
+    opacity 0.9s var(--ease-out-quart),
+    filter 0.9s var(--ease-out-quart),
+    transform 0.9s var(--ease-out-quart);
+}
+.blur-reveal.is-in {
+  opacity: 1;
+  filter: blur(0);
+  transform: none;
+}
+
+/* ---- Phantom-style card stack ------------------------------------
+   Cards start piled on the middle slot (front card on top, the ones
+   behind peeking out to the right), then spring apart into their rail
+   positions when the section scrolls into view (.is-in). */
+
+.stack-card {
+  position: relative;
+  transition:
+    transform 0.95s cubic-bezier(0.34, 1.2, 0.64, 1),
+    opacity 0.6s ease;
+}
+
+@media (min-width: 48rem) {
+  .stack-card:nth-child(1) {
+    z-index: 4;
+  }
+  .stack-card:nth-child(2) {
+    z-index: 3;
+  }
+  .stack-card:nth-child(3) {
+    z-index: 2;
+  }
+  .stack-card:nth-child(4) {
+    z-index: 1;
+  }
+  /* Pile every card onto the exact viewport center: undo the rail padding,
+     each card's slot offset, and half a card width. The cards behind peek
+     out to the right by 0.9rem per layer. */
+  .stack-rail:not(.is-in) .stack-card {
+    --stack-center: calc(
+      50vw - var(--rail-pad, 3.7rem) - var(--card-w, 26rem) / 2
+    );
+    --stack-step: calc(var(--card-w, 26rem) + var(--rail-gap, 2rem));
+  }
+  .stack-rail:not(.is-in) .stack-card:nth-child(1) {
+    transform: translateX(var(--stack-center));
+  }
+  .stack-rail:not(.is-in) .stack-card:nth-child(2) {
+    transform: translateX(calc(var(--stack-center) - var(--stack-step) + 0.9rem))
+      scale(0.99);
+  }
+  .stack-rail:not(.is-in) .stack-card:nth-child(3) {
+    transform: translateX(
+        calc(var(--stack-center) - 2 * var(--stack-step) + 1.8rem)
+      )
+      scale(0.975);
+  }
+  .stack-rail:not(.is-in) .stack-card:nth-child(4) {
+    transform: translateX(
+        calc(var(--stack-center) - 3 * var(--stack-step) + 2.7rem)
+      )
+      scale(0.96);
+  }
+  .stack-rail.is-in .stack-card:nth-child(2) {
+    transition-delay: 70ms;
+  }
+  .stack-rail.is-in .stack-card:nth-child(3) {
+    transition-delay: 140ms;
+  }
+  .stack-rail.is-in .stack-card:nth-child(4) {
+    transition-delay: 210ms;
+  }
+}
+
+/* Below md the rail is a swipeable row, so a simple staggered rise reads better */
+@media (max-width: 47.99rem) {
+  .stack-rail:not(.is-in) .stack-card {
+    opacity: 0;
+    transform: translateY(2.5rem);
+  }
+  .stack-rail.is-in .stack-card:nth-child(2) {
+    transition-delay: 90ms;
+  }
+  .stack-rail.is-in .stack-card:nth-child(3) {
+    transition-delay: 180ms;
+  }
+  .stack-rail.is-in .stack-card:nth-child(4) {
+    transition-delay: 270ms;
+  }
+}
+
+.card-hover {
+  transition: transform 0.5s var(--ease-out-quart);
+}
+.card-hover:hover {
+  transform: translateY(-0.4rem);
+}
+
+/* Hide scrollbar on the horizontal card rail */
+.rail {
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* Subtle film grain for video placeholders */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .rise,
+  .reveal,
+  .blur-reveal,
+  .stack-card,
+  .card-hover,
+  .chrome-in-down,
+  .chrome-in-up {
+    animation: none;
+    transition: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  .stack-rail:not(.is-in) .stack-card {
+    opacity: 1;
+    transform: none;
+  }
+  .t-tabs-pill,
+  .t-tab,
+  .t-learn-chevron,
+  .t-learn-arm,
+  .t-acc-panel,
+  .t-acc-panel-inner,
+  .t-acc-chevron,
+  .t-text-swap {
+    transition: none !important;
+  }
+  .t-digit-group .t-digit,
+  .t-badge,
+  .t-badge-dot {
+    animation: none !important;
+  }
+  .t-success-check {
+    animation: none !important;
+    opacity: 1;
+  }
+  .t-success-check svg path {
+    animation: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+}
+
+/* ---- Transitions (ported from podbot's site, our tokens) ---------------
+   The card hover sway and the CTA press live in JS (SwayCard.tsx,
+   useSpringPress.ts) on the Web Animations API; everything below is CSS. */
+
+/* Chrome enter: the header drops in (and anything floating rises in) on
+   mount — opacity 0 → 1, y ∓24 → 0, 0.5 s ease-out. One shot; the page
+   under it doesn't wait for it. */
+@keyframes chrome-in-down {
+  from { opacity: 0; transform: translateY(-24px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes chrome-in-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+.chrome-in-down { animation: chrome-in-down 0.5s ease-out both; }
+.chrome-in-up { animation: chrome-in-up 0.5s ease-out both; }
+
+/* Transitions.dev "Learn more hover" (Pill.tsx `chevron`): on hover the
+   chevron shifts right and its two arms rotate apart about the apex (10, 8)
+   so the angle opens; hover-out returns. */
+.t-learn {
+  --learn-shift: 2px;
+  --learn-spread: 8deg;
+  --learn-in: 350ms;
+  --learn-out: 350ms;
+  --learn-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.t-learn-chevron {
+  display: inline-flex;
+  transform: translateX(0);
+  transition: transform var(--learn-out) var(--learn-ease);
+}
+.t-learn-arm {
+  transform-box: view-box;
+  transform-origin: 10px 8px;
+  vector-effect: non-scaling-stroke;
+  transition: transform var(--learn-out) var(--learn-ease);
+}
+.t-learn:hover .t-learn-chevron {
+  transform: translateX(var(--learn-shift));
+  transition-duration: var(--learn-in);
+}
+.t-learn:hover .t-learn-arm { transition-duration: var(--learn-in); }
+.t-learn:hover .t-learn-arm-top { transform: rotate(var(--learn-spread)); }
+.t-learn:hover .t-learn-arm-bot { transform: rotate(calc(var(--learn-spread) * -1)); }
+
+/* Transitions.dev "Tabs sliding" (SlidingTabs.tsx), circular: the bar is a
+   flex container with 3px padding the pill sits inside; tabs on z-index 1
+   read above the pill on z-index 0. JS writes the pill's transform + width
+   from the active tab. */
+.t-tabs {
+  --tabs-dur: 250ms;
+  --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-ink) 6%, transparent);
+}
+.t-tab {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 1rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+  cursor: pointer;
+  border-radius: 9999px;
+  z-index: 1;
+  white-space: nowrap;
+  transition: color var(--tabs-dur) var(--tabs-ease);
+}
+.t-tab:not([aria-selected="true"]):hover { color: var(--color-ink); }
+.t-tab[aria-selected="true"] { color: var(--color-cream); }
+.t-tabs-pill {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  height: calc(100% - 6px);
+  width: 0;
+  background: var(--color-navy-deep);
+  border-radius: 9999px;
+  transform: translateX(0);
+  transition: transform var(--tabs-dur) var(--tabs-ease), width var(--tabs-dur) var(--tabs-ease);
+  will-change: transform, width;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Transitions.dev "Number pop-in" (Digits.tsx wraps any number that changes) */
+:root {
+  --digit-dur: 500ms;
+  --digit-distance: 8px;
+  --digit-stagger: 70ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --digit-dir-x: 0;
+  --digit-dir-y: 1;
+}
+@keyframes t-digit-pop-in {
+  0% {
+    transform: translate(calc(var(--digit-distance) * var(--digit-dir-x)), calc(var(--digit-distance) * var(--digit-dir-y)));
+    opacity: 0;
+    filter: blur(var(--digit-blur));
+  }
+  100% { transform: translate(0, 0); opacity: 1; filter: blur(0); }
+}
+.t-digit-group { display: inline-flex; align-items: baseline; direction: ltr; unicode-bidi: isolate; }
+.t-digit { display: inline-block; will-change: transform, opacity, filter; }
+.t-digit-group.is-animating .t-digit { animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both; }
+
+/* Transitions.dev "Accordion expand" (Accordion.tsx) */
+:root {
+  --acc-expand: 250ms;
+  --acc-collapse: 250ms;
+  --acc-chevron: 250ms;
+  --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(2px);
+  transition: opacity var(--acc-collapse) var(--acc-ease), filter var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+  transition: opacity var(--acc-expand) var(--acc-ease), filter var(--acc-expand) var(--acc-ease);
+}
+.t-acc-chevron {
+  display: inline-flex;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--acc-chevron) var(--acc-ease);
+}
+.t-acc-chevron path { vector-effect: non-scaling-stroke; }
+.t-acc[data-open="true"] .t-acc-chevron { transform: scaleY(-1); }
+
+/* Transitions.dev "Text states swap" (TextSwap.tsx) */
+:root {
+  --text-swap-dur: 150ms;
+  --text-swap-translate-y: 4px;
+  --text-swap-blur: 2px;
+  --text-swap-ease: ease-in-out;
+}
+.t-text-swap {
+  display: inline-block;
+  transform: translateY(0);
+  filter: blur(0);
+  opacity: 1;
+  transition: transform var(--text-swap-dur) var(--text-swap-ease), filter var(--text-swap-dur) var(--text-swap-ease), opacity var(--text-swap-dur) var(--text-swap-ease);
+  will-change: transform, filter, opacity;
+}
+.t-text-swap.is-exit {
+  transform: translateY(calc(var(--text-swap-translate-y) * -1));
+  filter: blur(var(--text-swap-blur));
+  opacity: 0;
+}
+.t-text-swap.is-enter-start {
+  transform: translateY(var(--text-swap-translate-y));
+  filter: blur(var(--text-swap-blur));
+  opacity: 0;
+  transition: none;
+}
+
+/* Transitions.dev "Success check" (SuccessCheck.tsx) */
+:root {
+  --check-opacity-dur: 500ms;
+  --check-rotate-dur: 500ms;
+  --check-rotate-from: 80deg;
+  --check-bob-dur: 500ms;
+  --check-y-amount: 40px;
+  --check-blur-dur: 500ms;
+  --check-blur-from: 10px;
+  --check-path-dur: 500ms;
+  --check-path-delay: 80ms;
+  --check-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-opacity: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-rotate: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-bob: cubic-bezier(0.34, 1.35, 0.64, 1);
+  --check-ease-path: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.t-success-check { display: inline-block; transform-origin: center; opacity: 0; will-change: transform, opacity, filter; }
+.t-success-check svg { display: block; overflow: visible; }
+.t-success-check[data-state="in"] {
+  animation:
+    t-check-fade var(--check-opacity-dur) var(--check-ease-opacity) forwards,
+    t-check-rotate var(--check-rotate-dur) var(--check-ease-rotate) forwards,
+    t-check-blur var(--check-blur-dur) var(--check-ease-out) forwards,
+    t-check-bob var(--check-bob-dur) var(--check-ease-bob) forwards;
+}
+.t-success-check[data-state="in"] svg path {
+  animation: t-check-draw var(--check-path-dur) var(--check-ease-path) var(--check-path-delay, 0ms) forwards;
+}
+@keyframes t-check-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes t-check-rotate { from { transform: rotate(var(--check-rotate-from)); } to { transform: rotate(0deg); } }
+@keyframes t-check-blur { from { filter: blur(var(--check-blur-from)); } to { filter: blur(0); } }
+@keyframes t-check-bob { from { translate: 0 var(--check-y-amount); } to { translate: 0 0; } }
+@keyframes t-check-draw { to { stroke-dashoffset: 0; } }
+
+/* Pop-out / dive-back for small popovers (dropdowns, menus): a back-out
+   spring in, a quick dive out. */
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.94); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+@keyframes pop-out {
+  from { opacity: 1; transform: none; filter: blur(0); }
+  to { opacity: 0; transform: translateY(-8px) scale(0.94); filter: blur(3px); }
+}
+.pop-in { animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.pop-out { animation: pop-out 0.16s cubic-bezier(0.5, 0, 0.1, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .pop-in, .pop-out { animation-duration: 0.01s; }
 }

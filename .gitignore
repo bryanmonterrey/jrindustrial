@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# raw source footage (210 MB); the encoded cuts live in public/videos
+/assets
+
+# serena tool state
+/.serena
